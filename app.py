@@ -1,61 +1,80 @@
 import streamlit as st
-from youtube_transcript_api import YouTubeTranscriptApi
 import openai
-import re
 
-st.set_page_config(page_title="VBA Summary Evaluator", page_icon="📋")
+# Konfigurasi Halaman
+st.set_page_config(page_title="AI Project Grader", page_icon="🎓")
 
-def get_video_id(url):
-    pattern = r"(?:v=|\/)([0-9A-Za-z_-]{11}).*"
-    match = re.search(pattern, url)
-    return match.group(1) if match else None
+# Judul dan Deskripsi
+st.title("🎓 Penilai Kesesuaian Proyek VBA")
+st.markdown("""
+Aplikasi ini menilai seberapa sesuai isi **Summary/Deskripsi Video** dengan **Soal** yang diberikan menggunakan AI.
+""")
 
-st.title("📋 Summary & Evaluasi Proyek VBA")
-st.markdown("Dapatkan ringkasan kesesuaian materi video dengan cepat.")
-
+# Input API Key di Sidebar
 with st.sidebar:
+    st.header("Settings")
     api_key = st.text_input("OpenAI API Key:", type="password")
-    st.divider()
-    st.info("Mode: Summary Evaluator")
+    st.info("Aplikasi ini akan menganalisis teks secara semantik untuk menentukan skor.")
 
-# Area Soal/Referensi
-soal_input = st.text_area("✍️ Referensi Soal/Tugas:", height=150)
+# Layout Kolom
+col1, col2 = st.columns(2)
 
-tab_otomatis, tab_manual = st.tabs(["🌐 Link YouTube", "📄 Tempel Transkrip"])
+with col1:
+    st.subheader("📝 Input Data")
+    # Input Soal
+    soal_input = st.text_input("Masukkan Soal/Kriteria:", value="Membuat form input data")
+    
+    # Input Teks Summary (Deskripsi Materi)
+    materi_input = st.text_area("Masukkan Summary/Deskripsi Video:", height=400, placeholder="Tempel deskripsi video di sini...")
 
-with tab_otomatis:
-    url_input = st.text_input("URL Video:")
-
-with tab_manual:
-    manual_transcript = st.text_area("Tempel Transkrip:")
-
-if st.button("Buat Summary"):
-    if not api_key:
-        st.error("Masukkan API Key!")
-    else:
-        materi = manual_transcript if manual_transcript.strip() else ""
-        if not materi and url_input:
-            v_id = get_video_id(url_input)
-            try:
-                t_list = YouTubeTranscriptApi.get_transcript(v_id, languages=['id', 'en'])
-                materi = " ".join([t['text'] for t in t_list])
-            except:
-                st.warning("Gagal ambil otomatis. Gunakan metode tempel manual.")
-
-        if materi:
-            with st.spinner("Menyusun ringkasan..."):
+with col2:
+    st.subheader("📊 Hasil Penilaian AI")
+    
+    if st.button("Mulai Penilaian"):
+        if not api_key:
+            st.error("Mohon masukkan API Key terlebih dahulu!")
+        elif not materi_input:
+            st.error("Mohon masukkan teks summary video!")
+        else:
+            with st.spinner("Sedang menghitung skor..."):
                 try:
                     openai.api_key = api_key
-                    # Prompt fokus ke Summary
-                    prompt = f"Buat ringkasan eksekutif (Summary) materi VBA ini berdasarkan soal: {soal_input}. Materi: {materi[:5000]}. Berikan skor % kesesuaian, tabel kriteria, dan kesimpulan singkat."
                     
+                    # Prompt Instruksi ke AI
+                    prompt = f"""
+                    Anda adalah dosen penguji pemrograman VBA. 
+                    Tugas Anda adalah menilai sejauh mana MATERI DESKRIPSI VIDEO memenuhi kriteria SOAL.
+
+                    SOAL: 
+                    {soal_input}
+
+                    MATERI DESKRIPSI VIDEO:
+                    {materi_input}
+
+                    Berikan penilaian dengan format berikut:
+                    1. SKOR PERSENTASE: (Berikan angka 0-100% berdasarkan relevansi lurus)
+                    2. ANALISIS: (Jelaskan bagian mana di materi yang membuktikan kriteria soal terpenuhi)
+                    3. BUKTI TEKSTUAL: (Kutip kalimat dari materi yang mendukung penilaian Anda)
+                    4. KESIMPULAN: (Apakah kriteria soal benar-benar tercapai?)
+                    """
+
                     response = openai.ChatCompletion.create(
                         model="gpt-3.5-turbo",
-                        messages=[{"role": "user", "content": prompt}]
+                        messages=[{"role": "system", "content": "Anda adalah asisten akademik yang objektif dan teliti."},
+                                  {"role": "user", "content": prompt}],
+                        temperature=0
                     )
-                    
-                    st.subheader("📊 Hasil Summary")
+
+                    # Menampilkan Hasil
+                    st.success("Penilaian Selesai!")
                     st.markdown("---")
-                    st.write(response.choices[0].message.content)
+                    st.markdown(response.choices[0].message.content)
+                    
                 except Exception as e:
-                    st.error(f"Error AI: {e}")
+                    st.error(f"Terjadi kesalahan: {str(e)}")
+    else:
+        st.write("Silakan klik tombol 'Mulai Penilaian' untuk melihat hasil.")
+
+# Footer
+st.markdown("---")
+st.caption("Aplikasi Penilai Otomatis Berbasis GPT-3.5")
