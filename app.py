@@ -17,7 +17,7 @@ with st.sidebar:
     
     # Pilihan Model (Beberapa model di OpenRouter gratis atau sangat murah)
     model_choice = st.selectbox("Pilih Model:", [
-        "google/gemini-flash-1.5-8b", 
+        "google/gemini-flash-2.5", 
         "openai/gpt-3.5-turbo",
         "mistralai/mistral-7b-instruct-v0.1"
     ])
