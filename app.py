@@ -1,4 +1,5 @@
 import streamlit as st
+import os
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -6,7 +7,7 @@ from langchain_core.output_parsers import StrOutputParser
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="VBA Project Evaluator", page_icon="📝", layout="wide")
 
-# --- CUSTOM CSS ---
+# --- CUSTOM CSS (SUDAH DIPERBAIKI) ---
 st.markdown("""
 <style>
     .report-card { 
@@ -20,24 +21,24 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- FUNGSI AMBIL KEY DARI SECRETS ---
+# --- FUNGSI MENGAMBIL API KEY ---
 def get_api_key():
-    # Mengambil dari Streamlit Secrets atau Sidebar jika Secrets kosong
+    # Prioritas 1: Ambil dari Streamlit Secrets
     if "OPENROUTER_API_KEY" in st.secrets:
         return st.secrets["OPENROUTER_API_KEY"]
     return None
 
 # --- UI UTAMA ---
 st.title("🤖 AI VBA Project Grader")
-st.caption("Gunakan Dashboard Secrets untuk pengaturan API Key yang lebih aman.")
 
-# Ambil key secara otomatis
+# Ambil key dari secrets secara otomatis
 auto_key = get_api_key()
 
 with st.sidebar:
-    st.header("Konfigurasi")
-    # Jika key ada di secrets, input ini bisa dikosongkan
-    manual_key = st.text_input("OpenRouter API Key (Opsional jika sudah ada di Secrets):", type="password")
+    st.header("Konfigurasi API")
+    # Jika key tidak ada di Secrets, user bisa input manual
+    manual_key = st.text_input("OpenRouter API Key:", type="password", help="Kosongkan jika sudah diatur di Secrets")
+    
     api_key = manual_key if manual_key else auto_key
     
     model_choice = st.selectbox("Pilih Model AI:", [
@@ -47,14 +48,14 @@ with st.sidebar:
     ])
     
     if not api_key:
-        st.warning("⚠️ API Key belum terdeteksi. Silakan masukkan di sidebar atau atur di Secrets.")
+        st.warning("⚠️ API Key tidak ditemukan. Masukkan di sini atau di Secrets.")
 
 col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("📝 Input Penilaian")
     soal_input = st.text_input("Kriteria Soal:", value="Membuat form input data")
-    summary_input = st.text_area("Summary/Deskripsi Materi Video:", height=400, placeholder="Tempel summary video di sini...")
+    summary_input = st.text_area("Summary/Deskripsi Materi Video:", height=400)
     
     analyze_btn = st.button("🚀 Jalankan Analisis")
 
@@ -64,11 +65,11 @@ with col2:
         if not api_key:
             st.error("Gagal: API Key tidak ditemukan!")
         elif not summary_input:
-            st.warning("Gagal: Materi summary belum diisi!")
+            st.warning("Gagal: Ringkasan materi kosong!")
         else:
-            with st.spinner("AI sedang menganalisis kesesuaian..."):
+            with st.spinner("AI sedang menganalisis..."):
                 try:
-                    # Inisialisasi LLM
+                    # Menghubungkan ke OpenRouter menggunakan LangChain
                     llm = ChatOpenAI(
                         model=model_choice,
                         openai_api_key=api_key,
@@ -79,21 +80,16 @@ with col2:
                         }
                     )
 
-                    # Chain LangChain
                     prompt = ChatPromptTemplate.from_messages([
-                        ("system", "Anda adalah instruktur IT senior yang objektif."),
-                        ("user", "Bandingkan SUMMARY dengan SOAL.\n\nSOAL:\n{soal}\n\nSUMMARY:\n{summary}\n\nBerikan skor dan tabel analisis.")
+                        ("system", "Anda adalah instruktur IT senior yang memberikan penilaian objektif."),
+                        ("user", "Bandingkan SUMMARY dengan SOAL.\n\nSOAL:\n{soal}\n\nSUMMARY:\n{summary}\n\nBerikan skor dan analisis.")
                     ])
 
                     chain = prompt | llm | StrOutputParser()
                     hasil = chain.invoke({"soal": soal_input, "summary": summary_input})
                     
-                    # Tampilan Hasil
+                    # Tampilan Hasil (Pastikan parameter ini benar)
                     st.markdown(f'<div class="report-card">{hasil}</div>', unsafe_allow_html=True)
-                    st.download_button("📩 Download Laporan", hasil, "hasil_penilaian.md")
                     
                 except Exception as e:
-                    st.error(f"Terjadi kesalahan: {str(e)}")
-
-st.markdown("---")
-st.caption("Versi Stabil 2.1 - Kompatibel dengan Python 3.13")
+                    st.error(f"Terjadi kesalahan API: {str(e)}")
