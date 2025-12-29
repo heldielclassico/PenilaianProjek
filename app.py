@@ -3,122 +3,99 @@ from youtube_transcript_api import YouTubeTranscriptApi
 import openai
 import re
 
-# --- KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="VBA Project Evaluator", page_icon="💻", layout="wide")
+# --- KONFIGURASI ---
+st.set_page_config(page_title="VBA Evaluator Pro", page_icon="📋")
 
-# --- STYLE CSS CUSTOM ---
-st.markdown("""
-    <style>
-    .main {
-        background-color: #f5f7f9;
-    }
-    .stButton>button {
-        width: 100%;
-        border-radius: 5px;
-        height: 3em;
-        background-color: #FF4B4B;
-        color: white;
-    }
-    </style>
-    """, unsafe_allow_index=True)
-
-# --- FUNGSI HELPER ---
 def get_video_id(url):
-    """Mengekstrak ID video dari berbagai format link YouTube"""
-    pattern = r"(?:v=|\/)([0-9A-Za-z_-]{11}).*"
-    match = re.search(pattern, url)
-    return match.group(1) if match else None
+    """Fungsi ekstraksi ID video yang lebih kuat"""
+    if not url:
+        return None
+    
+    # Regex untuk menangani berbagai format link YouTube
+    patterns = [
+        r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", # Link standar & embed
+        r"(?:be\/)([0-9A-Za-z_-]{11}).*",  # Link pendek (youtu.be)
+        r"(?:shorts\/)([0-9A-Za-z_-]{11}).*" # Link YouTube Shorts
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return str(match.group(1)) # Memastikan output adalah string
+    return None
 
 def fetch_transcript(video_id):
-    """Mengambil transkrip dengan fallback bahasa"""
+    """Mengambil transkrip dengan penanganan error string"""
     try:
-        # Mencoba ambil bahasa Indonesia, jika tidak ada ambil Inggris
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['id', 'en'])
-        return " ".join([t['text'] for t in transcript_list])
-    except Exception:
-        return None
+        # Menampilkan transkrip yang tersedia untuk debugging di console
+        transcript_list = YouTubeTranscriptApi.list_transcripts(str(video_id))
+        
+        # Mencoba mencari bahasa Indonesia atau Inggris (Manual atau Otomatis)
+        try:
+            transcript = transcript_list.find_transcript(['id', 'en'])
+        except:
+            transcript = transcript_list.find_generated_transcript(['id', 'en'])
+            
+        data = transcript.fetch()
+        return " ".join([t['text'] for t in data])
+    except Exception as e:
+        return f"ERROR_TRANSCRIPT: {str(e)}"
 
-# --- UI UTAMA ---
-st.title("🚀 Penilai Proyek VBA (YouTube Analyzer)")
-st.subheader("Menilai kesesuaian materi video dengan standar soal Anda")
+# --- INTERFACE ---
+st.title("🤖 Penilai Proyek VBA")
+st.markdown("Aplikasi akan membandingkan isi video dengan kriteria soal Anda.")
 
 with st.sidebar:
-    st.header("Konfigurasi")
-    api_key = st.text_input("Masukkan OpenAI API Key:", type="password")
-    st.info("""
-    **Tips:** Gunakan video yang memiliki Subtitle/CC agar transkrip bisa dibaca oleh sistem.
-    """)
+    api_key = st.text_input("OpenAI API Key:", type="password")
+    st.divider()
+    st.caption("Pastikan video memiliki Subtitle/CC.")
 
-col1, col2 = st.columns([1, 1])
+col1, col2 = st.columns(2)
 
 with col1:
-    yt_url = st.text_input("Link Video YouTube:", placeholder="https://www.youtube.com/watch?v=...")
-    soal_ref = st.text_area(
-        "Masukkan Soal/Kriteria Referensi:", 
-        height=250,
-        placeholder="Contoh:\n1. Harus menjelaskan cara membuat UserForm\n2. Harus ada coding koneksi database\n3. Penjelasan variabel harus detail"
-    )
+    url_input = st.text_input("Masukkan Link YouTube:", placeholder="https://www.youtube.com/watch?v=...")
+    soal_input = st.text_area("Kriteria Soal/Referensi:", height=200, placeholder="1. Cara buat loop\n2. Cara koneksi DB...")
 
-# --- LOGIKA ANALISIS ---
-if st.button("Mulai Penilaian"):
-    if not api_key:
-        st.error("❌ Mohon isi API Key OpenAI di sidebar!")
-    elif not yt_url or not soal_ref:
-        st.error("❌ Mohon isi Link YouTube dan Soal Referensi!")
+if st.button("Mulai Analisis"):
+    if not api_key or not url_input or not soal_input:
+        st.warning("Harap lengkapi semua input!")
     else:
-        v_id = get_video_id(yt_url)
+        v_id = get_video_id(url_input)
         
         if v_id:
-            with st.spinner('Memproses video...'):
-                # 1. Ambil Transkrip
-                full_text = fetch_transcript(v_id)
+            with st.spinner("Mengekstrak materi video..."):
+                transkrip = fetch_transcript(v_id)
                 
-                if not full_text:
-                    st.error("⚠️ Transkrip tidak ditemukan untuk video ini. Silakan cari video lain yang memiliki fitur Caption (CC).")
+                if "ERROR_TRANSCRIPT" in transkrip:
+                    st.error(f"Gagal mengambil teks: {transkrip.replace('ERROR_TRANSCRIPT:', '')}")
+                    st.info("Saran: Gunakan video lain yang memiliki tombol CC (Closed Captions).")
                 else:
-                    # 2. Kirim ke OpenAI
-                    try:
-                        openai.api_key = api_key
-                        
-                        prompt_system = "Anda adalah instruktur senior pemrograman VBA dan Excel Macro."
-                        prompt_user = f"""
-                        Tugas: Nilailah transkrip video tutorial berikut berdasarkan SOAL REFERENSI yang diberikan.
-                        
-                        SOAL REFERENSI:
-                        {soal_ref}
-                        
-                        TRANSKRIP VIDEO:
-                        {full_text[:4500]} 
-                        
-                        Berikan laporan evaluasi dengan format:
-                        - **Skor Kesesuaian Keseluruhan**: [0-100]%
-                        - **Analisis Poin demi Poin**: (Apakah setiap butir soal terjawab di video?)
-                        - **Kejelasan Teknis**: (Nilai kejelasan penjelasan coding VBA-nya)
-                        - **Kekurangan**: (Apa yang tidak dijelaskan padahal ada di soal?)
-                        - **Kesimpulan Akhir**: (Layak atau tidak untuk referensi proyek)
-                        """
-                        
-                        response = openai.ChatCompletion.create(
-                            model="gpt-3.5-turbo", # atau gpt-4 jika ingin lebih akurat
-                            messages=[
-                                {"role": "system", "content": prompt_system},
-                                {"role": "user", "content": prompt_user}
-                            ],
-                            temperature=0.7
-                        )
-                        
-                        # 3. Tampilkan Hasil di Col2
-                        with col2:
-                            st.success("✅ Analisis Berhasil!")
-                            st.markdown("### 📋 Hasil Laporan Penilaian")
-                            st.markdown("---")
-                            st.write(response.choices[0].message.content)
+                    with st.spinner("AI sedang menilai..."):
+                        try:
+                            openai.api_key = api_key
+                            prompt = f"""
+                            Anda adalah penguji coding VBA. Bandingkan materi video dengan kriteria berikut.
                             
-                    except Exception as e:
-                        st.error(f"Terjadi kesalahan AI: {str(e)}")
+                            KRITERIA SOAL:
+                            {soal_input}
+                            
+                            TRANSKRIP VIDEO:
+                            {transkrip[:4000]}
+                            
+                            Berikan skor persentase kesesuaian (0-100%) dan jelaskan poin mana yang kurang.
+                            """
+                            
+                            response = openai.ChatCompletion.create(
+                                model="gpt-3.5-turbo",
+                                messages=[{"role": "user", "content": prompt}]
+                            )
+                            
+                            with col2:
+                                st.success("Analisis Selesai!")
+                                st.markdown("### Laporan Penilaian")
+                                st.write(response.choices[0].message.content)
+                                
+                        except Exception as e:
+                            st.error(f"Kesalahan AI: {str(e)}")
         else:
-            st.error("❌ Link YouTube tidak valid!")
-
-# --- FOOTER ---
-st.markdown("---")
-st.caption("Aplikasi ini menggunakan integrasi YouTube Transcript API dan OpenAI GPT.")
+            st.error("Link YouTube tidak dikenali. Pastikan link benar.")
