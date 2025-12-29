@@ -1,80 +1,97 @@
 import streamlit as st
 import openai
 
-# Konfigurasi Halaman
-st.set_page_config(page_title="AI Project Grader", page_icon="🎓")
+# --- KONFIGURASI HALAMAN ---
+st.set_page_config(page_title="VBA Project Grader (OpenRouter)", page_icon="⚖️")
 
-# Judul dan Deskripsi
-st.title("🎓 Penilai Kesesuaian Proyek VBA")
+st.title("⚖️ Penilai Proyek VBA via OpenRouter")
 st.markdown("""
-Aplikasi ini menilai seberapa sesuai isi **Summary/Deskripsi Video** dengan **Soal** yang diberikan menggunakan AI.
+Aplikasi ini membandingkan **Summary Materi** dengan **Soal** menggunakan API OpenRouter.
 """)
 
-# Input API Key di Sidebar
+# --- SIDEBAR KONFIGURASI ---
 with st.sidebar:
-    st.header("Settings")
-    api_key = st.text_input("OpenAI API Key:", type="password")
-    st.info("Aplikasi ini akan menganalisis teks secara semantik untuk menentukan skor.")
+    st.header("Konfigurasi API")
+    # Masukkan API Key OpenRouter Anda (biasanya diawali sk-or-v1-...)
+    api_key = st.text_input("Masukkan OpenRouter API Key:", type="password")
+    
+    # Pilihan Model (Beberapa model di OpenRouter gratis atau sangat murah)
+    model_choice = st.selectbox("Pilih Model:", [
+        "google/gemini-flash-1.5-8b", 
+        "openai/gpt-3.5-turbo",
+        "mistralai/mistral-7b-instruct-v0.1"
+    ])
+    
+    st.info("""
+    **Catatan:** Jika menggunakan model gratis dari OpenRouter, pastikan saldo Anda mencukupi atau gunakan model dengan label 'free'.
+    """)
 
-# Layout Kolom
+# --- INPUT DATA ---
 col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("📝 Input Data")
-    # Input Soal
-    soal_input = st.text_input("Masukkan Soal/Kriteria:", value="Membuat form input data")
+    soal_input = st.text_input("Kriteria Soal:", value="Membuat form input data")
     
-    # Input Teks Summary (Deskripsi Materi)
-    materi_input = st.text_area("Masukkan Summary/Deskripsi Video:", height=400, placeholder="Tempel deskripsi video di sini...")
+    materi_input = st.text_area(
+        "Masukkan Summary/Deskripsi Materi:", 
+        height=400,
+        placeholder="Tempel summary video Anda di sini..."
+    )
 
 with col2:
     st.subheader("📊 Hasil Penilaian AI")
     
-    if st.button("Mulai Penilaian"):
+    if st.button("Mulai Analisis"):
         if not api_key:
-            st.error("Mohon masukkan API Key terlebih dahulu!")
+            st.error("Silakan masukkan API Key OpenRouter!")
         elif not materi_input:
-            st.error("Mohon masukkan teks summary video!")
+            st.error("Materi tidak boleh kosong!")
         else:
-            with st.spinner("Sedang menghitung skor..."):
+            with st.spinner("Menghubungi OpenRouter..."):
                 try:
+                    # Konfigurasi khusus OpenRouter
                     openai.api_key = api_key
+                    openai.api_base = "https://openrouter.ai/api/v1"
                     
-                    # Prompt Instruksi ke AI
+                    # Header tambahan yang disarankan OpenRouter
+                    headers = {
+                        "HTTP-Referer": "http://localhost:8501", # Opsional untuk ranking OpenRouter
+                        "X-Title": "VBA Project Grader"
+                    }
+
                     prompt = f"""
-                    Anda adalah dosen penguji pemrograman VBA. 
-                    Tugas Anda adalah menilai sejauh mana MATERI DESKRIPSI VIDEO memenuhi kriteria SOAL.
+                    Anda adalah dosen penguji pemrograman. Tugas Anda adalah memberikan penilaian SUMMARY MATERI berdasarkan SOAL yang diberikan.
 
                     SOAL: 
                     {soal_input}
 
-                    MATERI DESKRIPSI VIDEO:
+                    SUMMARY MATERI:
                     {materi_input}
 
-                    Berikan penilaian dengan format berikut:
-                    1. SKOR PERSENTASE: (Berikan angka 0-100% berdasarkan relevansi lurus)
-                    2. ANALISIS: (Jelaskan bagian mana di materi yang membuktikan kriteria soal terpenuhi)
-                    3. BUKTI TEKSTUAL: (Kutip kalimat dari materi yang mendukung penilaian Anda)
-                    4. KESIMPULAN: (Apakah kriteria soal benar-benar tercapai?)
+                    Berikan laporan penilaian dalam format:
+                    1. SKOR PERSENTASE: (0-100%)
+                    2. ANALISIS KESESUAIAN: (Jelaskan butir apa saja yang terpenuhi)
+                    3. KEKURANGAN: (Apa yang tidak ada di materi namun diminta di soal)
+                    4. KESIMPULAN: (Layak/Tidak Layak)
                     """
 
                     response = openai.ChatCompletion.create(
-                        model="gpt-3.5-turbo",
-                        messages=[{"role": "system", "content": "Anda adalah asisten akademik yang objektif dan teliti."},
-                                  {"role": "user", "content": prompt}],
-                        temperature=0
+                        model=model_choice,
+                        messages=[
+                            {"role": "system", "content": "Anda adalah asisten penilai akademik yang objektif."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        headers=headers
                     )
-
+                    
                     # Menampilkan Hasil
-                    st.success("Penilaian Selesai!")
+                    st.success("Analisis Berhasil!")
                     st.markdown("---")
                     st.markdown(response.choices[0].message.content)
                     
                 except Exception as e:
-                    st.error(f"Terjadi kesalahan: {str(e)}")
-    else:
-        st.write("Silakan klik tombol 'Mulai Penilaian' untuk melihat hasil.")
+                    st.error(f"Terjadi kesalahan pada API: {str(e)}")
 
-# Footer
 st.markdown("---")
-st.caption("Aplikasi Penilai Otomatis Berbasis GPT-3.5")
+st.caption("Powered by OpenRouter API")
